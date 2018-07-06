@@ -1,0 +1,149 @@
+ ---
+title: "Course Evals"
+author: "David Sasson"
+date: "2/22/2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+setwd("~/Desktop/DS II/scratch/blog")
+packs <- c("tidyverse", "dplyr", "ggplot2", "tidytext", "xlsx", "ggcorrplot","wordcloud", "reshape2", "ggthemes", "gridExtra", "PerformanceAnalytics", "tidyr", "lubridate")
+lapply(packs, require, character.only = TRUE)
+```
+
+# Data Cleaning
+```{r, warning=FALSE, echo=FALSE}
+evals <- read.xlsx("cleaned_dat.xlsx", sheetIndex = 1, stringsAsFactors = FALSE)
+
+# separating columns
+evals <- evals %>% 
+  separate(School.and.Course., c("School", "Name", "Year"), sep="-") %>% 
+  separate(School, c("School_Name", "Number"), sep = 3) %>% 
+  separate(Year, c("Term", "Year"), sep = " ")
+
+colnames(evals)<- c("auto_school", "number", "name", "term", "year", "course_content", "teaching_effective", "rating", "n", "school")
+
+# numeric columns and date
+evals <- evals %>% 
+  transform(number = as.numeric(number), 
+            year= as.numeric(year), 
+            course_content= as.numeric(course_content), 
+            teaching_effective = as.numeric(teaching_effective), 
+            rating = as.numeric(rating), n = as.numeric(n))
+
+evals <- evals %>% transform(year = ymd(year, truncated = 2L))
+evals <- evals %>% transform(year = as.Date(year))
+evals$year <-format(as.Date(evals$year), "%Y")
+evals <- na.omit(evals)
+```
+
+# ggplot
+
+```{r}
+evals %>% 
+  ggplot() + 
+  geom_bar(aes(year, fill=year)) + 
+  xlab("") + 
+  guides(fill=FALSE) + 
+  theme_minimal()
+  
+evals %>% 
+  ggplot() + 
+  geom_bar(aes(year, fill=year)) +
+  facet_wrap(~school) + 
+  xlab("") + 
+  guides(fill=FALSE) + 
+  theme_minimal()
+
+
+evals %>%
+  ggplot(aes(year, rating, fill=year)) + 
+  geom_boxplot() +
+  facet_wrap( ~school) + 
+  ylab("Course Rating") +
+  xlab("") + 
+  guides(fill=FALSE) + 
+  theme_minimal()
+
+
+nums <- evals[,c("course_content","teaching_effective", "rating")]
+chart.Correlation(nums, pch=19)
+```
+
+
+
+# Sentimennts
+
+```{r}
+comms <- read.xlsx("cleaned_dat.xlsx", header = TRUE, stringsAsFactors = FALSE, sheetIndex=2)
+
+comms <- comms %>% 
+  separate(Term, c("Term", "Year"), sep = " ")
+
+colnames(comms)[colnames(comms)=="What.would.you.like.to.tell.future.Harvard.Chan.students.about.this.course."] <- "comments"
+
+text_df <- comms %>% 
+  unnest_tokens(word, comments) %>%
+  anti_join(stop_words)
+```
+
+
+
+```{r}
+text_df  %>% glimpse() 
+
+sentiments <- text_df %>% inner_join(get_sentiments("afin")) %>%  ungroup()
+
+sentiments  %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray20", "gray80"),
+                   max.words = 100) + 
+  theme_minimal()
+
+sentiments %>%
+  count(word, score, sort = TRUE) %>%
+  ungroup()
+
+
+text_df %>%
+  group_by(School)%>%
+  count(word, sort = TRUE) %>%
+  filter(n > 10) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  facet_wrap(~School)+ 
+  theme_minimal()
+
+
+# fix this! average shodn;t be this high
+sentiments %>% 
+  group_by(School) %>%
+  mutate (y_avg = mean(score)) %>% 
+  ggplot(aes(Term, y=y_avg)) +
+  geom_bar(stat = "identity", show.legend = FALSE)  +
+  facet_wrap(~School) +
+  ylab("Average Sentiment Score")+ 
+  theme_minimal()
+
+
+sentiments %>% 
+  ggplot(aes(x=score)) +
+  geom_density() +
+  facet_wrap(~School) +
+  theme_minimal()
+
+sentiments %>% 
+  ggplot(aes(x=score, col=Term)) +
+  geom_density() +
+  facet_wrap(~School)+
+  theme_minimal() 
+```
+
+
